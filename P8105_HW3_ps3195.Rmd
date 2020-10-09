@@ -1,0 +1,386 @@
+---
+title: "P8105_HW3"
+author: "Pengyuan Su (ps3195)"
+date: "10/8/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(p8105.datasets)
+library(readxl)
+library(rnoaa)
+library(ggridges)
+library(patchwork)
+
+
+
+knitr::opts_chunk$set(
+	fig.width = 6, 
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+
+## Problem 1
+
+```{r}
+data("instacart")
+```
+
+
+This dataset contains `r nrow(instacart)` rows and `r ncol(instacart)` columns.
+
+Observations are the level of items in orders by user. There are user / order variables -- user ID, order ID, order day, and order hour. There are also item variables -- name, aisle, department, and some numeric codes. 
+
+
+
+```{r}
+instacart %>% 
+	count(aisle) %>% 
+	arrange(desc(n))
+```
+
+
+Make a plot
+
+```{r aisle}
+instacart %>% 
+	count(aisle) %>% 
+	filter(n > 10000) %>% 
+	mutate(
+		aisle = factor(aisle),
+		aisle = fct_reorder(aisle, n)
+	) %>% 
+	ggplot(aes(x = aisle, y = n)) + 
+	geom_point() + 
+	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+
+Make a table!!
+
+```{r table1}
+instacart %>% 
+	filter(aisle %in% c("baking ingredients", "dog food care", "packaged vegetables fruits")) %>% 
+	group_by(aisle) %>% 
+	count(product_name) %>% 
+	mutate(rank = min_rank(desc(n))) %>% 
+	filter(rank < 4) %>% 
+	arrange(aisle, rank) %>% 
+	knitr::kable()
+```
+
+
+Apples vs ice cream..
+
+```{r a vs i}
+instacart %>% 
+	filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) %>% 
+	group_by(product_name, order_dow) %>% 
+	summarize(mean_hour = mean(order_hour_of_day)) %>% 
+	pivot_wider(
+		names_from = order_dow,
+		values_from = mean_hour
+	)
+```
+
+
+## Problem 2
+
+```{r path for 2}
+path = "./data/accel_data.csv"
+```
+
+
+Read the accel_data
+
+```{r clean for 2}
+accel_df = 
+      read_csv(
+             file = path,
+      ) %>% 
+      janitor::clean_names() %>% 
+      mutate(day_type = recode(day, "Monday" = "Weekday", "Tuesday" = "weekday", "Wednesday" = "weekday", "Thursday" = "weekday", "Friday" = "weekday", "Saturday" = "weekend", "Sunday" = "weekend")) %>% 
+      relocate(week, day_id, day, day_type) %>% 
+      pivot_longer(
+             activity_1:activity_1440,
+               names_to = "minute",
+               names_prefix = "activity_",
+               values_to = "activity_counts"
+      )
+
+week_df = 
+  tibble(
+    n_day = 0:6,
+    day = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+  )
+
+accel_df = 
+  left_join(accel_df, week_df, by = "day") %>% 
+  mutate(n_date = week * 7 + n_day - 6,
+         day = factor(day),
+         day_type = factor(day_type),
+         minute = as.numeric(minute)) %>% 
+  relocate(n_date, week, day) %>%
+  select(-n_day) %>% 
+  arrange(n_date)
+```
+
+There are `r ncol(accel_df)` variables. The names of the variables in `accel_df` are: `r ls(accel_df)`, and there are `r nrow(accel_df)` observations in it.
+
+
+Plot the relation between number of activities per day and the day:
+
+```{r plot of day}
+plot_day =
+  accel_df %>% 
+  group_by(n_date, week) %>% 
+  summarise(n_ac = sum(activity_counts)) %>% 
+  ggplot(aes(x = n_date, y = n_ac, color = week)) +
+        geom_point() + geom_line() +
+  labs(x = "date", y = "Counts")
+plot_day
+```
+
+
+Make the table:
+
+```{r table2}
+accel_df %>% 
+  group_by(n_date, week, day) %>% 
+  summarise(n_ac = sum(activity_counts)) %>% 
+  knitr::kable(digits = 1)
+```
+
+
+According to the plot and the table, the number of activities per day shows in fluctuate.
+
+
+* week 1: the number of activities firstly drops and then increases from Monday to Friday and decreases when enter the weekend. 
+
+
+* week 2: the number of activities firstly decreases from Sunday to Monday and increases during the rest.
+
+
+* week 3: the number of activities firstly increase when day comes to weekday and then decrease on Tuesday, then it shows fluctuate.
+
+
+* week 4: the number of activities firstly shows in fluctuate and decreases from Wednesday to Saturday.
+
+
+* week 5: the number of activities increases from Sunday to Friday and decreases on Saturday.
+
+
+According to the weeks, activities seems to increase from week 1 to 3 and decrease in week 4 and 5.
+
+
+
+```{r plot of 24 hour}
+
+plot_hour =
+  accel_df %>%
+  group_by(week) %>% 
+  ggplot(aes(x = minute, y = activity_counts, color = n_date)) +
+  geom_point() + geom_line() +
+  scale_y_continuous(name = "Activity counts in minutes") +
+  scale_x_continuous(name = "Hour",
+                     breaks = c(120, 240, 360, 480, 600, 720, 840, 960, 1080, 1200, 1320, 1440), 
+                     labels = c("2h", "4h", "6h", "8h", "10h", "12h","14h", "16h", "18h","20h", "22h", "24h")
+                     ) +
+  labs(
+    title = "The 24-hour activity counts in 35 days",
+    caption = "Data from accelerometer data",
+    color = "date"
+    ) 
+
+plot_hour
+```
+
+*Conclusion:*  The `plot_hour` shows that the 63-year-old man usually take activities during 6am to 10pm, and he firstly act most at around 11.30 am and 9 pm, but when days go through, he act more likely at 7 am and 9 pm. 
+
+
+## Problem 3
+
+```{r load ny_noaa}
+data("ny_noaa")
+```
+
+```{r tidy for 3}
+noaa_df =
+  ny_noaa %>% 
+  janitor::clean_names() %>%
+  mutate_at(vars(prcp, tmax, tmin, snow, snwd), as.numeric) %>% 
+  mutate(id = factor(id),
+         prcp = prcp / 10,
+         tmin = tmin / 10,
+         tmax = tmax / 10,
+         snow = case_when(
+             snow <0 ~ 0,
+             snow >= 0 ~ snow
+         )
+         ) %>% 
+  separate(date, c("year", "month", "day"), sep = "([-])") %>% 
+  mutate_at(vars(year, month, day), as.factor)
+
+skimr::skim_without_charts(noaa_df)
+```
+
+
+The `ny_noaa` package has `r nrow(noaa_df)` rows and `r ncol(noaa_df)` columns. It has the data of weather conditions for all New York state weather stations from January 1, 1981 through December 31, 2010. The variables in it are `ls(noaa_df)`. `prcp`, `snow`, `snwd`, `tmax`, `tmin` have the missing values. The missing proportion of them: prcp(`r  22860/2595176`), snow(`r 381221/2595176`), snwd(`r 591786/2595176`), tmax(`r 1134358/2595176`), and tmin(`r 1134420/2595176`). `snow` and `snwd` are  high while `tmax` and `tmin` are extremely high! 
+
+
+```{r snowfall}
+noaa_df %>% 
+  count(snow) %>% 
+  arrange(desc(n))
+```
+
+It is shown that 0 is the most commonly observed values, which means that no snowfall could be the common situation from 1981 to 2010 in New York.
+
+
+```{r January vs July}
+January = 
+  noaa_df %>% 
+  group_by(id, year, month) %>% 
+  filter(month == "01") %>% 
+  summarise(tmax_mean = mean(tmax, na.rm = T)) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = year, y = tmax_mean, color = id)) +   geom_point(alpha = 0.3) + 
+  geom_path(aes(group = id), alpha = 0.3) +
+  theme(
+    legend.position = 'none',
+    axis.text.x = element_text(angle = -90,
+                                   vjust = 0.5,
+                                   hjust = 1)
+                              ) +
+  labs(
+    title = " Mean of Max temperature in July in each station ",
+    x = "Year",
+    y = "Mean of Temperature (C)"
+  )
+
+
+July = 
+  noaa_df %>% 
+  group_by(id, year, month) %>% 
+  filter(month == "07") %>% 
+  summarise(tmax_mean = mean(tmax, na.rm = T)) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = year, y = tmax_mean, color = id)) +   geom_point(alpha = 0.3) + 
+  geom_path(aes(group = id), alpha = 0.3) +
+  theme(
+    legend.position = 'none',
+    axis.text.x = element_text(angle = -90,
+                                   vjust = 0.5,
+                                   hjust = 1)
+                              ) +
+  labs(
+    title = " Mean of Max temperature in July in each station ",
+    x = "Year",
+    y = "Mean of Temperature (C)"
+  )
+
+January / July
+```
+
+
+According to the two-panel plot, we could see the difference of max temperature in January and July, 
+
+
+* January shows range around -10 to 10 while July has the range around 20 to 32.5. 
+
+
+* As for the January plot, 1994, 2004 are the two years which have relative low temperature while 1990, 1998, 2002, and 2006 have the relative high temperature. As for the July plot, 1992, 2000 have relative low temperature while 1983, 1999, and 2010 have the relative high temperature.
+
+
+Outliers in January:
+
+```{r check outlier1}
+noaa_df %>% 
+  filter(month == "01") %>% 
+  group_by(id, year, month) %>% 
+  summarise(tmax_mean = mean(tmax,na.rm = T)) %>% 
+  drop_na() %>% 
+  filter(tmax_mean > 10 | tmax_mean < -10) %>% 
+  knitr::kable(digits = 1)
+```
+
+Outliers in July:
+
+```{r check outlier2}
+noaa_df %>% 
+  filter(month == "07") %>% 
+  group_by(id, year, month) %>% 
+  summarise(tmax_mean = mean(tmax,na.rm = T)) %>% 
+  drop_na() %>% 
+  filter(tmax_mean > 32.5 | tmax_mean < 20) %>% 
+  knitr::kable(digits = 1)
+```
+
+
+```{r Tmax vs Tmin and snowfall}
+t = 
+  noaa_df %>% 
+  pivot_longer(
+    tmax:tmin,
+    names_to = "t_type",
+    values_to = "temperature"
+  ) %>% 
+  ggplot(aes(x = year, y = temperature, color = t_type)) +
+  geom_boxplot(aes(alpha = 0.6, outlier.size = 0.2)) +
+  theme(
+    legend.position = 'right',
+    axis.text.x = element_text(
+                               angle = -90,
+                               vjust = 0.5,
+                               size = 8,
+                               hjust = 1
+                               ),
+    axis.text.y = element_text(size = 8)
+       ) +
+  scale_y_continuous(breaks = c(-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60)) +
+  labs(
+    x = "Year",
+    y = "Temperature (C)",
+    title = "Tmax vs Tmin"
+    )
+
+
+snowf = 
+  noaa_df %>%
+  filter(snow > 0 & snow < 100, !is.na(snow)) %>% 
+  ggplot(aes(x = snow)) +
+  geom_density_ridges(aes(y = year, group = year),
+                      alpha = 0.2,
+                      rel_min_height = 0.15) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = -90,
+                                   vjust = 0.5,
+                                   hjust = 1)) +
+  scale_x_continuous(breaks = c(10, 20, 30, 40, 50, 60, 70, 80)) +
+  coord_flip() +
+  labs(
+    title = "Density for Snowfall between 0mm to 100mm",
+    subtitle = "1981-2010 in New York state",
+    x = "Snowfall (mm)",
+    y = "Years"
+  )
+  
+  
+  t + snowf
+```
+
+
+* According to the t plot, there seems to be no change during the years, and the difference between tmax and tmin is range from 12C to 15C, hence it could not make a conclusion about global warming.
+
+
+* According to the density of snowfall, we could find that three main range of snowfall are 5-15(mm), 20-30(mm), and 45-55(mm). However, we could see that the proportion of 5-15(mm) increases more and gradually become higher than the other two during the period. Though not significant enough, we could see the influence of golbal warming...
